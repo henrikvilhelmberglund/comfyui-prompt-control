@@ -155,13 +155,15 @@ def get_function(
     count = 0
     chunks = []
     current = 0
+    skipped = 0
     for start, end, funcname, args in find_function_spans(text, func, require_args, defaults):
         ph = None
         if spans_include(spans, start, end):
             continue
         if placeholder:
             ph = f"\0{placeholder}{count}\0"
-        instances.append(FunctionSpec(funcname, args, start, ph))
+        instances.append(FunctionSpec(funcname, args, start - skipped, ph))
+        skipped += end - start
         chunks.append(text[current:start] + (ph or ""))
         current = end
         count += 1
