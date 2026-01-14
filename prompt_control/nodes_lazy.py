@@ -6,6 +6,8 @@ from comfy_execution.graph import ExecutionBlocker
 
 from .utils import get_function
 
+import re
+
 log = logging.getLogger("comfyui-prompt-control")
 
 from .utils import consolidate_schedule, find_nonscheduled_loras
@@ -87,7 +89,7 @@ def create_hook_nodes_for_lora(graph, path, info, existing_node, start_pct, end_
     return hook_node, next_keyframe
 
 
-def build_lora_schedule(graph, schedule, model, clip, apply_hooks=True):
+def build_lora_schedule(graph, schedule, model, clip, apply_hooks=True, text=""):
     # This gets rid of non-existent LoRAs
     consolidated = consolidate_schedule(schedule)
     if model is not None:
@@ -99,6 +101,7 @@ def build_lora_schedule(graph, schedule, model, clip, apply_hooks=True):
 
     hook_nodes = {}
     start_pct = 0.0
+    triggerwords = re.sub(r'<[^>]*>,', '', text).strip()  # Extract the trigger words
 
     def key(lora, info):
         return f"{lora}-{info['weight']}-{info['weight_clip']}"
@@ -143,7 +146,7 @@ def build_lora_schedule(graph, schedule, model, clip, apply_hooks=True):
     r = graph.finalize()
     log.debug("LazyLoraLoader built graph: %s", json.dumps(r))
 
-    ret = (model, clip, res)
+    ret = (model, clip, res, triggerwords)
 
     return {"result": ret, "expand": r}
 
@@ -167,7 +170,8 @@ class PCLazyLoraLoaderAdvanced:
             "hidden": {"unique_id": "UNIQUE_ID"},
         }
 
-    RETURN_TYPES = ("MODEL", "CLIP", "HOOKS")
+    RETURN_TYPES = ("MODEL", "CLIP", "HOOKS", "STRING")
+    RETURN_NAMES = ("MODEL", "CLIP", "HOOKS", "trigger words")
     OUTPUT_TOOLTIPS = ("Returns a model and clip with LoRAs scheduled",)
     CATEGORY = "promptcontrol"
     FUNCTION = "apply"
@@ -177,7 +181,7 @@ class PCLazyLoraLoaderAdvanced:
     ):
         schedule = parse_prompt_schedules(text, filters=tags, start=start, end=end, num_steps=num_steps)
         graph = GraphBuilder()
-        r = build_lora_schedule(graph, schedule, model, clip, apply_hooks=apply_hooks)
+        r = build_lora_schedule(graph, schedule, model, clip, apply_hooks=apply_hooks, text=text)
         return r
 
 
@@ -196,12 +200,14 @@ class PCLazyLoraLoader(PCLazyLoraLoaderAdvanced):
     RETURN_TYPES = (
         "MODEL",
         "CLIP",
+        "STRING"
     )
     CATEGORY = "promptcontrol"
+    RETURN_NAMES = ("MODEL", "CLIP", "trigger words")
 
     def apply(self, *args, **kwargs):
         r = super().apply(*args, **kwargs)
-        r["result"] = r["result"][:2]
+        r["result"] = r["result"][:2] + (r["result"][3],)
         return r
 
 
